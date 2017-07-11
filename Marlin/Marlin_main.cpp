@@ -228,6 +228,7 @@
  */
 #include <SoftwareSerial.h>
 
+#include "flux_protocol.h"
 #include "Marlin.h"
 
 #include "ultralcd.h"
@@ -320,6 +321,13 @@
 #endif
 
 bool Running = true;
+
+struct PlayStatus play_st = {
+  0, // enable_linecheck
+  0, // stashed
+  0, // next_no
+  0, // laser pwm=0
+};
 
 uint8_t marlin_debug_flags = DEBUG_NONE;
 
@@ -997,6 +1005,39 @@ void gcode_line_error(const char* err, bool doFlush = true) {
   serial_count = 0;
 }
 
+
+void inline proc_heigh_level_control(const char* cmd) {
+  if(strcmp(cmd, "ENABLE_LINECHECK") == 0) {
+    SERIAL_PROTOCOLLN("CTRL LINECHECK_ENABLED");
+    play_st.enable_linecheck = 1;
+    play_st.last_no = 0;
+
+  } else if(strcmp(cmd, "DISABLE_LINECHECK") == 0) {
+    while(buflen > 1) {
+      buflen--;
+      bufindr = (bufindr + 1) % BUFSIZE;
+    }
+
+    SERIAL_PROTOCOLLN("CTRL LINECHECK_DISABLED");
+    play_st.enable_linecheck = 0;
+    filament_detect.enable = false;
+    play_st.stashed = 0;
+    led_st.god_mode = 0;
+    play_st.stashed_laser_pwm = 0;
+    global.home_btn_press++;
+    analogWrite(M_IO2, 0);
+  } else if(strcmp(cmd, "HOME_BUTTON_TRIGGER") == 0) {
+    global.home_btn_press++;
+
+  } else if(strcmp(cmd, "OOPS") == 0) {
+    report_ln(buflen);
+
+  } else {
+    SERIAL_PROTOCOLLN("ER UNKNOW_CMD");
+  }
+}
+
+
 /**
  * Get all commands waiting on the serial port and queue them.
  * Exit when the buffer is full or when no more characters are
@@ -1037,6 +1078,12 @@ inline void get_serial_commands() {
       serial_count = 0; //reset buffer
 
       char* command = serial_line_buffer;
+
+      if(command[0] == '@') {
+        proc_heigh_level_control(command);
+        serial_count = 0;
+        continue;
+      }
 
       while (*command == ' ') command++; // skip any leading spaces
       char *npos = (*command == 'N') ? command : NULL, // Require the N parameter to start the line
@@ -1226,10 +1273,6 @@ void get_available_commands() {
   if (drain_injected_commands_P()) return;
 
   get_serial_commands();
-
-  #if ENABLED(SDSUPPORT)
-    get_sdcard_commands();
-  #endif
 }
 
 /**
@@ -12880,6 +12923,7 @@ void loop() {
       --commands_in_queue;
       if (++cmd_queue_index_r >= BUFSIZE) cmd_queue_index_r = 0;
     }
+    report_ln();
   }
   endstops.report_state();
   idle();
