@@ -1158,9 +1158,6 @@ inline void get_serial_commands() {
         }
       }
 
-      char *npos = (*command == 'N') ? command : NULL, // Require the N parameter to start the line
-           *apos = strchr(command, '*');
-
       // Movement commands alert when stopped
       if (IsStopped()) {
         char* gpos = strchr(command, 'G');
@@ -1196,6 +1193,7 @@ inline void get_serial_commands() {
 
       // Add the command to the queue
       _enqueuecommand(serial_line_buffer, true);
+      report_ln(commands_in_queue);
     }
     else if (serial_count >= MAX_CMD_SIZE - 1) {
       // Keep fetching, but ignore normal characters beyond the max length
