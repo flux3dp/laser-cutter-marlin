@@ -996,6 +996,67 @@ void servo_init() {
 
 #endif // HAS_COLOR_LEDS
 
+
+bool inline check_line_number(const char* cmd) {
+  // Check N
+  char *strchr_pointer = strchr(cmd, 'N');
+
+  if(strchr_pointer == NULL) {
+    // Can not found Line Number, send error, clean buffer and return
+    SERIAL_PROTOCOL("ER MISSING_LINENUMBER ");
+    SERIAL_PROTOCOL(play_st.last_no + 1);
+    SERIAL_PROTOCOL("\n");
+    MYSERIAL.flush();
+    return false;
+  } else {
+    gcode_N = (strtol(strchr_pointer + 1, NULL, 10));
+    if(gcode_N != play_st.last_no + 1) {
+      SERIAL_PROTOCOL("ER LINE_MISMATCH ");
+      SERIAL_PROTOCOL(play_st.last_no + 1);
+      SERIAL_PROTOCOL(" ");
+      SERIAL_PROTOCOL(gcode_N);
+      SERIAL_PROTOCOL("\n");
+      MYSERIAL.flush();
+      return false;
+    }
+  }
+
+  // Check checksum
+  strchr_pointer = strchr(cmd, '*');
+  if(strchr_pointer == NULL) {
+    // Checksum not send
+    SERIAL_PROTOCOL("ER CHECKSUM_MISMATCH ");
+    SERIAL_PROTOCOL(play_st.last_no + 1);
+    SERIAL_PROTOCOL("\n");
+    MYSERIAL.flush();
+    return false;
+
+  } else {
+    // Calculate checksum
+    byte checksum = 0;
+    byte count = 0;
+
+    while(cmd[count] != '*') {
+      checksum = checksum^cmd[count++];
+    }
+
+    strchr_pointer = strchr(cmd, '*');
+
+    if(strtol(strchr_pointer + 1, NULL, 10) != checksum) {
+      // Checksum not match
+      SERIAL_PROTOCOL("ER CHECKSUM_MISMATCH ");
+      SERIAL_PROTOCOL(play_st.last_no + 1);
+      SERIAL_PROTOCOL("\n");
+      MYSERIAL.flush();
+      return false;
+    }
+  }
+
+  play_st.last_no = gcode_N;
+  return true;
+}
+
+
 void gcode_line_error(const char* err, bool doFlush = true) {
   SERIAL_ERROR_START;
   serialprintPGM(err);
@@ -1079,6 +1140,20 @@ inline void get_serial_commands() {
         proc_heigh_level_control(command + 1);
         serial_count = 0;
         continue;
+      }
+
+      if(play_st.enable_linecheck == 1) {
+        if(!check_line_number(command)) {
+          // Check failed, ignore this command and return
+          serial_count = 0;
+          continue;
+        }
+      } else {
+        if(strchr(command, 'N') != NULL) {
+          SERIAL_PROTOCOLLN("ER NCODE_NOT_ACCEPTED");
+          serial_count = 0;
+          return;
+        }
       }
 
       while (*command == ' ') command++; // skip any leading spaces
