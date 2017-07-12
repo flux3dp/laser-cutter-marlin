@@ -1013,24 +1013,20 @@ void inline proc_heigh_level_control(const char* cmd) {
     play_st.last_no = 0;
 
   } else if(strcmp(cmd, "DISABLE_LINECHECK") == 0) {
-    while(buflen > 1) {
-      buflen--;
-      bufindr = (bufindr + 1) % BUFSIZE;
+    while(commands_in_queue > 1) {
+      commands_in_queue--;
+      if (++cmd_queue_index_r >= BUFSIZE) cmd_queue_index_r = 0;
     }
 
     SERIAL_PROTOCOLLN("CTRL LINECHECK_DISABLED");
     play_st.enable_linecheck = 0;
-    filament_detect.enable = false;
     play_st.stashed = 0;
-    led_st.god_mode = 0;
     play_st.stashed_laser_pwm = 0;
-    global.home_btn_press++;
-    analogWrite(M_IO2, 0);
+    analogWrite(4, 255);
   } else if(strcmp(cmd, "HOME_BUTTON_TRIGGER") == 0) {
-    global.home_btn_press++;
 
   } else if(strcmp(cmd, "OOPS") == 0) {
-    report_ln(buflen);
+    report_ln(commands_in_queue);
 
   } else {
     SERIAL_PROTOCOLLN("ER UNKNOW_CMD");
@@ -1184,82 +1180,6 @@ inline void get_serial_commands() {
   } // queue has space, serial has data
 }
 
-#if ENABLED(SDSUPPORT)
-
-  /**
-   * Get commands from the SD Card until the command buffer is full
-   * or until the end of the file is reached. The special character '#'
-   * can also interrupt buffering.
-   */
-  inline void get_sdcard_commands() {
-    static bool stop_buffering = false,
-                sd_comment_mode = false;
-
-    if (!card.sdprinting) return;
-
-    /**
-     * '#' stops reading from SD to the buffer prematurely, so procedural
-     * macro calls are possible. If it occurs, stop_buffering is triggered
-     * and the buffer is run dry; this character _can_ occur in serial com
-     * due to checksums, however, no checksums are used in SD printing.
-     */
-
-    if (commands_in_queue == 0) stop_buffering = false;
-
-    uint16_t sd_count = 0;
-    bool card_eof = card.eof();
-    while (commands_in_queue < BUFSIZE && !card_eof && !stop_buffering) {
-      const int16_t n = card.get();
-      char sd_char = (char)n;
-      card_eof = card.eof();
-      if (card_eof || n == -1
-          || sd_char == '\n' || sd_char == '\r'
-          || ((sd_char == '#' || sd_char == ':') && !sd_comment_mode)
-      ) {
-        if (card_eof) {
-          SERIAL_PROTOCOLLNPGM(MSG_FILE_PRINTED);
-          card.printingHasFinished();
-          #if ENABLED(PRINTER_EVENT_LEDS)
-            LCD_MESSAGEPGM(MSG_INFO_COMPLETED_PRINTS);
-            set_led_color(0, 255, 0); // Green
-            #if HAS_RESUME_CONTINUE
-              enqueue_and_echo_commands_P(PSTR("M0")); // end of the queue!
-            #else
-              safe_delay(1000);
-            #endif
-            set_led_color(0, 0, 0);   // OFF
-          #endif
-          card.checkautostart(true);
-        }
-        else if (n == -1) {
-          SERIAL_ERROR_START;
-          SERIAL_ECHOLNPGM(MSG_SD_ERR_READ);
-        }
-        if (sd_char == '#') stop_buffering = true;
-
-        sd_comment_mode = false; // for new command
-
-        if (!sd_count) continue; // skip empty lines (and comment lines)
-
-        command_queue[cmd_queue_index_w][sd_count] = '\0'; // terminate string
-        sd_count = 0; // clear sd line buffer
-
-        _commit_command(false);
-      }
-      else if (sd_count >= MAX_CMD_SIZE - 1) {
-        /**
-         * Keep fetching, but ignore normal characters beyond the max length
-         * The command will be injected when EOL is reached
-         */
-      }
-      else {
-        if (sd_char == ';') sd_comment_mode = true;
-        if (!sd_comment_mode) command_queue[cmd_queue_index_w][sd_count++] = sd_char;
-      }
-    }
-  }
-
-#endif // SDSUPPORT
 
 /**
  * Add to the circular command queue the next command from:
@@ -12884,46 +12804,16 @@ void setup() {
 void loop() {
   if (commands_in_queue < BUFSIZE) get_available_commands();
 
-  #if ENABLED(SDSUPPORT)
-    card.checkautostart(false);
-  #endif
-
   if (commands_in_queue) {
 
-    #if ENABLED(SDSUPPORT)
-
-      if (card.saving) {
-        char* command = command_queue[cmd_queue_index_r];
-        if (strstr_P(command, PSTR("M29"))) {
-          // M29 closes the file
-          card.closefile();
-          SERIAL_PROTOCOLLNPGM(MSG_FILE_SAVED);
-          ok_to_send();
-        }
-        else {
-          // Write the string from the read buffer to SD
-          card.write_command(command);
-          if (card.logging)
-            process_next_command(); // The card is saving because it's logging
-          else
-            ok_to_send();
-        }
-      }
-      else
-        process_next_command();
-
-    #else
-
-      process_next_command();
-
-    #endif // SDSUPPORT
+    process_next_command();
 
     // The queue may be reset by a command handler or by code invoked by idle() within a handler
     if (commands_in_queue) {
       --commands_in_queue;
       if (++cmd_queue_index_r >= BUFSIZE) cmd_queue_index_r = 0;
     }
-    report_ln();
+    report_ln(commands_in_queue);
   }
   endstops.report_state();
   idle();

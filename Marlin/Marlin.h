@@ -321,6 +321,18 @@ extern float soft_endstop_min[XYZ], soft_endstop_max[XYZ];
   linear_fit* lsf_linear_fit(double x[], double y[], double z[], const int);
 #endif
 
+typedef struct PlayStatus {
+  int enable_linecheck;
+  int stashed;
+  unsigned long last_no;
+  int stashed_laser_pwm;
+  float stashed_position[NUM_AXIS];
+  float stashed_feedrate;
+  uint8_t stashed_extruder;
+  uint8_t stashed_mode;
+} PlayStatus;
+
+
 #if HAS_LEVELING
   bool leveling_is_valid();
   bool leveling_is_active();
