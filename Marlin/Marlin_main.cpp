@@ -1076,7 +1076,7 @@ inline void get_serial_commands() {
       char* command = serial_line_buffer;
 
       if(command[0] == '@') {
-        proc_heigh_level_control(command);
+        proc_heigh_level_control(command + 1);
         serial_count = 0;
         continue;
       }
