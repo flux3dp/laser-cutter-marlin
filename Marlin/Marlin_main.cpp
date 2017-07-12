@@ -1142,6 +1142,8 @@ inline void get_serial_commands() {
         continue;
       }
 
+      while (*command == ' ') command++; // skip any leading spaces
+
       if(play_st.enable_linecheck == 1) {
         if(!check_line_number(command)) {
           // Check failed, ignore this command and return
@@ -1156,48 +1158,8 @@ inline void get_serial_commands() {
         }
       }
 
-      while (*command == ' ') command++; // skip any leading spaces
       char *npos = (*command == 'N') ? command : NULL, // Require the N parameter to start the line
            *apos = strchr(command, '*');
-
-      if (npos) {
-
-        bool M110 = strstr_P(command, PSTR("M110")) != NULL;
-
-        if (M110) {
-          char* n2pos = strchr(command + 4, 'N');
-          if (n2pos) npos = n2pos;
-        }
-
-        gcode_N = strtol(npos + 1, NULL, 10);
-
-        if (gcode_N != gcode_LastN + 1 && !M110) {
-          gcode_line_error(PSTR(MSG_ERR_LINE_NO));
-          return;
-        }
-
-        if (apos) {
-          byte checksum = 0, count = 0;
-          while (command[count] != '*') checksum ^= command[count++];
-
-          if (strtol(apos + 1, NULL, 10) != checksum) {
-            gcode_line_error(PSTR(MSG_ERR_CHECKSUM_MISMATCH));
-            return;
-          }
-          // if no errors, continue parsing
-        }
-        else {
-          gcode_line_error(PSTR(MSG_ERR_NO_CHECKSUM));
-          return;
-        }
-
-        gcode_LastN = gcode_N;
-        // if no errors, continue parsing
-      }
-      else if (apos) { // No '*' without 'N'
-        gcode_line_error(PSTR(MSG_ERR_NO_LINENUMBER_WITH_CHECKSUM), false);
-        return;
-      }
 
       // Movement commands alert when stopped
       if (IsStopped()) {
